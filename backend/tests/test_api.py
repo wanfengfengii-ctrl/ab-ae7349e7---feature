@@ -152,3 +152,142 @@ def test_import_roundtrip_payload_shape():
     payload = valid_payload()
     resp = client.post("/api/schedule", json=copy.deepcopy(payload))
     assert resp.status_code == 200
+
+
+# ------------------------------------------------------------ 电缆包络模式
+
+
+def envelope_payload() -> dict:
+    # 区间 [-10, 350]：A(350) 有 -10/350 两个圈位，C(349) 只有 349。
+    payload = valid_payload()
+    payload["cable_envelope"] = {
+        "reference_azimuth": 0,
+        "lower_limit": -10,
+        "upper_limit": 350,
+    }
+    payload["targets"] = [
+        {"id": "A", "azimuth": 350, "elevation": 0, "duration": 1,
+         "window_start": 0, "window_end": 1000, "priority": 5, "must_observe": True},
+        {"id": "C", "azimuth": 349, "elevation": 0, "duration": 1,
+         "window_start": 0, "window_end": 1000, "priority": 1, "must_observe": True},
+    ]
+    return payload
+
+
+def test_envelope_schedule_returns_unwrapped_fields():
+    resp = client.post("/api/schedule", json=envelope_payload())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["cable_envelope"] == {
+        "reference_azimuth": 0,
+        "lower_limit": -10,
+        "upper_limit": 350,
+    }
+    obs = body["observations"]
+    assert [o["target_id"] for o in obs] == ["C", "A"]
+    c, a = obs
+    assert (c["azimuth_start"], c["azimuth_end"], c["direction"]) == (0, 349, "cw")
+    assert (a["azimuth_start"], a["azimuth_end"], a["direction"]) == (349, 350, "cw")
+    # 展开方位的有符号转角：0->349 需要 349 秒。
+    assert c["slew"]["azimuth_seconds"] == 349
+
+
+def test_envelope_infeasible_returns_clear_reason():
+    payload = envelope_payload()
+    # 窗口收紧到 351：先到 -10 再赶 349 需要 360 秒，任何顺序/圈位都不可行。
+    payload["targets"][1]["window_end"] = 351
+    payload["targets"][0]["window_end"] = 351
+    resp = client.post("/api/schedule", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "infeasible"
+    assert body["message"] and "圈位" in body["message"]
+    assert body["observations"] == []
+
+
+def test_envelope_target_outside_interval_is_infeasible():
+    payload = envelope_payload()
+    # 区间 [0, 10] 内不存在方位 350 的同余位置。
+    payload["cable_envelope"] = {
+        "reference_azimuth": 0,
+        "lower_limit": 0,
+        "upper_limit": 10,
+    }
+    resp = client.post("/api/schedule", json=payload)
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["status"] == "infeasible"
+    assert "A" in (body["message"] or "")
+
+
+def test_envelope_reference_not_congruent_is_422():
+    payload = envelope_payload()
+    payload["cable_envelope"]["reference_azimuth"] = 10  # initial_azimuth=0
+    resp = client.post("/api/schedule", json=payload)
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    locs = _locs(resp.json())
+    # 跨字段错误定位到 cable_envelope，消息中点明 reference_azimuth。
+    assert any("cable_envelope" in [str(x) for x in loc] for loc in locs)
+    assert any("reference_azimuth" in item["msg"] for item in detail)
+
+
+def test_envelope_reference_inside_interval_is_422():
+    payload = envelope_payload()
+    payload["cable_envelope"]["reference_azimuth"] = 360  # 同余但在区间外
+    resp = client.post("/api/schedule", json=payload)
+    assert resp.status_code == 422
+    assert any("reference_azimuth" in [str(x) for x in loc] for loc in _locs(resp.json()))
+
+
+def test_envelope_lower_greater_than_upper_is_422():
+    payload = envelope_payload()
+    payload["cable_envelope"] = {
+        "reference_azimuth": 0,
+        "lower_limit": 350,
+        "upper_limit": -10,
+    }
+    resp = client.post("/api/schedule", json=payload)
+    assert resp.status_code == 422
+    # 错误定位到上界字段（与 window_end 晚于 window_start 的定位方式一致）。
+    assert any("upper_limit" in [str(x) for x in loc] for loc in _locs(resp.json()))
+
+
+def test_envelope_span_too_large_is_422():
+    payload = envelope_payload()
+    payload["cable_envelope"] = {
+        "reference_azimuth": 0,
+        "lower_limit": -2000,
+        "upper_limit": 2000,
+    }
+    resp = client.post("/api/schedule", json=payload)
+    assert resp.status_code == 422
+    assert any("upper_limit" in [str(x) for x in loc] for loc in _locs(resp.json()))
+
+
+def test_envelope_missing_field_is_422():
+    payload = envelope_payload()
+    del payload["cable_envelope"]["upper_limit"]
+    resp = client.post("/api/schedule", json=payload)
+    assert resp.status_code == 422
+    assert any("upper_limit" in [str(x) for x in loc] for loc in _locs(resp.json()))
+
+
+def test_legacy_mode_omitted_envelope_keeps_old_semantics():
+    # 旧请求（不带 cable_envelope）：响应与逐步结果均无展开字段。
+    resp = client.post("/api/schedule", json=valid_payload())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["cable_envelope"] is None
+    for o in body["observations"]:
+        assert o["azimuth_start"] is None
+        assert o["azimuth_end"] is None
+        assert o["direction"] is None
+
+    # 显式 null 与缺省等价。
+    payload = valid_payload()
+    payload["cable_envelope"] = None
+    resp2 = client.post("/api/schedule", json=payload)
+    assert resp2.status_code == 200
+    assert resp2.json()["observations"] == body["observations"]

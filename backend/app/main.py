@@ -7,8 +7,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .scheduler import ObservatoryConfig, Target, solve
+from .scheduler import CableEnvelope, ObservatoryConfig, Target, solve
 from .schemas import (
+    CableEnvelopeOut,
     HealthResponse,
     ObservationOut,
     ScheduleRequest,
@@ -30,12 +31,22 @@ def health() -> HealthResponse:
 
 @app.post("/api/schedule", response_model=ScheduleResponse, tags=["schedule"])
 def schedule(req: ScheduleRequest) -> ScheduleResponse:
+    env_in = req.cable_envelope
     cfg = ObservatoryConfig(
         initial_time=req.initial_time,
         initial_azimuth=req.initial_azimuth,
         initial_elevation=req.initial_elevation,
         azimuth_speed=req.azimuth_speed,
         elevation_speed=req.elevation_speed,
+        cable_envelope=(
+            CableEnvelope(
+                reference_azimuth=env_in.reference_azimuth,
+                lower_limit=env_in.lower_limit,
+                upper_limit=env_in.upper_limit,
+            )
+            if env_in is not None
+            else None
+        ),
     )
     targets = [
         Target(
@@ -66,6 +77,9 @@ def schedule(req: ScheduleRequest) -> ScheduleResponse:
                 wait_seconds=o.wait_seconds,
                 start=o.start,
                 end=o.end,
+                azimuth_start=o.azimuth_start,
+                azimuth_end=o.azimuth_end,
+                direction=o.direction,  # type: ignore[arg-type]
             )
             for o in result.observations
         ],
@@ -73,6 +87,15 @@ def schedule(req: ScheduleRequest) -> ScheduleResponse:
         total_priority=result.total_priority,
         target_count=result.target_count,
         end_time=result.end_time,
+        cable_envelope=(
+            CableEnvelopeOut(
+                reference_azimuth=env_in.reference_azimuth,
+                lower_limit=env_in.lower_limit,
+                upper_limit=env_in.upper_limit,
+            )
+            if env_in is not None
+            else None
+        ),
     )
 
 

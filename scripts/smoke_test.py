@@ -139,6 +139,64 @@ def main() -> int:
     check("HTTP 200", status == 200, status)
     check("status == infeasible", bool(body) and body.get("status") == "infeasible", body)
 
+    print("[smoke] 电缆包络模式：圈位与顺序联合求解")
+    envelope = {
+        "initial_time": 0,
+        "initial_azimuth": 0,
+        "initial_elevation": 0,
+        "azimuth_speed": 1,
+        "elevation_speed": 1,
+        "cable_envelope": {
+            "reference_azimuth": 0,
+            "lower_limit": -10,
+            "upper_limit": 350,
+        },
+        "targets": [
+            {"id": "A", "azimuth": 350, "elevation": 0, "duration": 1,
+             "window_start": 0, "window_end": 1000, "priority": 5, "must_observe": True},
+            {"id": "C", "azimuth": 349, "elevation": 0, "duration": 1,
+             "window_start": 0, "window_end": 1000, "priority": 1, "must_observe": True},
+        ],
+    }
+    status, _, body = request("POST", f"{base}/api/schedule", envelope)
+    check("HTTP 200", status == 200, status)
+    check("包络模式 status == ok", bool(body) and body.get("status") == "ok", body)
+    if body and body.get("status") == "ok":
+        check("回显 cable_envelope", body.get("cable_envelope") == envelope["cable_envelope"])
+        obs = body["observations"]
+        check("序列 == [C, A]（非最短圈位的全局解）",
+              [o["target_id"] for o in obs] == ["C", "A"], obs)
+        c, a = obs
+        check(
+            "C 起止展开方位/方向 == 0->349 cw",
+            (c["azimuth_start"], c["azimuth_end"], c["direction"]) == (0, 349, "cw"),
+            c,
+        )
+        check(
+            "A 起止展开方位/方向 == 349->350 cw，转角 1°",
+            (a["azimuth_start"], a["azimuth_end"], a["direction"]) == (349, 350, "cw"),
+            a,
+        )
+
+    print("[smoke] 电缆包络：无共同可行顺序与圈位时明确不可行")
+    envelope_bad = copy.deepcopy(envelope)
+    for t in envelope_bad["targets"]:
+        t["window_end"] = 351
+    status, _, body = request("POST", f"{base}/api/schedule", envelope_bad)
+    check("HTTP 200", status == 200, status)
+    check("包络不可行 status == infeasible",
+          bool(body) and body.get("status") == "infeasible", body)
+    check("不可行原因提及圈位", bool(body) and "圈位" in (body.get("message") or ""), body)
+
+    print("[smoke] 电缆包络：零位不与初始方位同余返回可定位 422")
+    bad_env = copy.deepcopy(envelope)
+    bad_env["cable_envelope"]["reference_azimuth"] = 10
+    status, _, body = request("POST", f"{base}/api/schedule", bad_env)
+    check("HTTP 422", status == 422, status)
+    locs = [item.get("loc", []) for item in (body or {}).get("detail", [])]
+    check("错误定位包含 cable_envelope",
+          any("cable_envelope" in [str(x) for x in loc] for loc in locs), locs)
+
     if FAILURES:
         print(f"[smoke] 失败 {len(FAILURES)} 项: {FAILURES}")
         return 1

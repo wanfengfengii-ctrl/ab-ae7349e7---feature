@@ -133,6 +133,45 @@ button.danger {
   font-size: 12px;
 }
 
+.config-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.envelope {
+  border: 1px dashed var(--card-border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.envelope-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.envelope-toggle input {
+  width: auto;
+}
+
+.envelope-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.envelope-hint {
+  margin: 0;
+}
+
+.envelope-hint.invalid {
+  color: #fca5a5;
+}
+
 input[type="number"],
 input:not([type]) {
   background: #0d1430;

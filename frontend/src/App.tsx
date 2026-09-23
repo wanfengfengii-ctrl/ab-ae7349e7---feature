@@ -18,6 +18,7 @@ function configOf(req: ScheduleRequest): SchedulerConfig {
     initial_elevation: req.initial_elevation,
     azimuth_speed: req.azimuth_speed,
     elevation_speed: req.elevation_speed,
+    cable_envelope: req.cable_envelope ?? null,
   }
 }
 
@@ -86,7 +87,10 @@ export default function App() {
     <div className="page">
       <header className="page-header">
         <h1>夜间射电观测排程台</h1>
-        <p>全局最优：必观约束 → 总优先级 → 目标数 → 结束时刻 → 编号字典序</p>
+        <p>
+          全局最优：必观约束 → 总优先级 → 目标数 → 结束时刻 → 编号字典序
+          {config.cable_envelope ? " → 展开方位字典序（电缆包络模式）" : ""}
+        </p>
       </header>
 
       <section className="card">
@@ -114,6 +118,9 @@ export default function App() {
         <ConfigForm
           values={config}
           onChange={(field, value) => setConfig((c) => ({ ...c, [field]: value }))}
+          onEnvelopeChange={(envelope) =>
+            setConfig((c) => ({ ...c, cable_envelope: envelope }))
+          }
         />
       </section>
 

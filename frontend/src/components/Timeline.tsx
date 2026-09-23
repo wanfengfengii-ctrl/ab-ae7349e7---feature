@@ -64,7 +64,13 @@ export function Timeline({ observations, initialTime, endTime, windows }: Timeli
               width={Math.max(0, x(o.arrival_time) - x(prevEnd))}
               height={12}
             >
-              <title>{`转向 ${o.slew.total_seconds}s（方位 ${o.slew.azimuth_seconds}s / 俯仰 ${o.slew.elevation_seconds}s）`}</title>
+              <title>
+                {o.azimuth_start !== null && o.azimuth_end !== null && o.direction
+                  ? `转向 ${o.slew.total_seconds}s（展开方位 ${o.azimuth_start}°→${o.azimuth_end}°，` +
+                    `${o.direction === "cw" ? "顺时针" : o.direction === "ccw" ? "逆时针" : "不动"} ` +
+                    `${Math.abs(o.azimuth_end - o.azimuth_start)}°；方位 ${o.slew.azimuth_seconds}s / 俯仰 ${o.slew.elevation_seconds}s）`
+                  : `转向 ${o.slew.total_seconds}s（方位 ${o.slew.azimuth_seconds}s / 俯仰 ${o.slew.elevation_seconds}s）`}
+              </title>
             </rect>
             <rect
               className="tl-wait"

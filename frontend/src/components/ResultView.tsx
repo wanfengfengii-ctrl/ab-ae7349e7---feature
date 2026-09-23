@@ -1,5 +1,5 @@
 import { formatHMS } from "../time"
-import type { ScheduleResponse, TargetInput } from "../types"
+import type { ScheduleResponse, SlewDirection, TargetInput } from "../types"
 import { Timeline } from "./Timeline"
 
 interface ResultViewProps {
@@ -8,13 +8,24 @@ interface ResultViewProps {
   initialTime: number
 }
 
+const DIRECTION_LABEL: Record<SlewDirection, string> = {
+  cw: "顺时针 +",
+  ccw: "逆时针 −",
+  none: "不动",
+}
+
 export function ResultView({ result, targets, initialTime }: ResultViewProps) {
+  const envelope = result.cable_envelope
   if (result.status === "infeasible") {
     return (
       <section className="card result-card infeasible">
         <h2>无可行必观序列</h2>
         <p>{result.message ?? "必观目标无法全部纳入任何可行序列。"}</p>
-        <p className="hint">请放宽可见窗、缩短持续时长、调整初始条件或提高转速后重试。</p>
+        <p className="hint">
+          {envelope
+            ? "请放宽软限位区间或可见窗、改用其它电缆零位、缩短持续时长或提高转速后重试。"
+            : "请放宽可见窗、缩短持续时长、调整初始条件或提高转速后重试。"}
+        </p>
       </section>
     )
   }
@@ -74,6 +85,13 @@ export function ResultView({ result, targets, initialTime }: ResultViewProps) {
               <tr>
                 <th>#</th>
                 <th>编号</th>
+                {envelope && (
+                  <>
+                    <th>起始展开方位°</th>
+                    <th>到达展开方位°</th>
+                    <th>方向 / 转角</th>
+                  </>
+                )}
                 <th>转向（方位/俯仰/合计）</th>
                 <th>到达</th>
                 <th>等待</th>
@@ -82,29 +100,46 @@ export function ResultView({ result, targets, initialTime }: ResultViewProps) {
               </tr>
             </thead>
             <tbody>
-              {result.observations.map((o, i) => (
-                <tr key={o.target_id}>
-                  <td>{i + 1}</td>
-                  <td>{o.target_id}</td>
-                  <td>
-                    {o.slew.azimuth_seconds}s / {o.slew.elevation_seconds}s /{" "}
-                    <strong>{o.slew.total_seconds}s</strong>
-                  </td>
-                  <td>
-                    {o.arrival_time}
-                    <span className="hms">{formatHMS(o.arrival_time)}</span>
-                  </td>
-                  <td>{o.wait_seconds}s</td>
-                  <td>
-                    {o.start}
-                    <span className="hms">{formatHMS(o.start)}</span>
-                  </td>
-                  <td>
-                    {o.end}
-                    <span className="hms">{formatHMS(o.end)}</span>
-                  </td>
-                </tr>
-              ))}
+              {result.observations.map((o, i) => {
+                const turn =
+                  envelope && o.azimuth_start !== null && o.azimuth_end !== null
+                    ? o.azimuth_end - o.azimuth_start
+                    : null
+                return (
+                  <tr key={o.target_id}>
+                    <td>{i + 1}</td>
+                    <td>{o.target_id}</td>
+                    {envelope && (
+                      <>
+                        <td>{o.azimuth_start}</td>
+                        <td>{o.azimuth_end}</td>
+                        <td>
+                          {o.direction !== null && turn !== null
+                            ? `${DIRECTION_LABEL[o.direction]}${Math.abs(turn)}°`
+                            : "—"}
+                        </td>
+                      </>
+                    )}
+                    <td>
+                      {o.slew.azimuth_seconds}s / {o.slew.elevation_seconds}s /{" "}
+                      <strong>{o.slew.total_seconds}s</strong>
+                    </td>
+                    <td>
+                      {o.arrival_time}
+                      <span className="hms">{formatHMS(o.arrival_time)}</span>
+                    </td>
+                    <td>{o.wait_seconds}s</td>
+                    <td>
+                      {o.start}
+                      <span className="hms">{formatHMS(o.start)}</span>
+                    </td>
+                    <td>
+                      {o.end}
+                      <span className="hms">{formatHMS(o.end)}</span>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </>

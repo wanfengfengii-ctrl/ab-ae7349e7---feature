@@ -1,4 +1,9 @@
-import type { ScheduleRequest, SchedulerConfig, TargetInput } from "./types"
+import type {
+  CableEnvelope,
+  ScheduleRequest,
+  SchedulerConfig,
+  TargetInput,
+} from "./types"
 
 /** 内置示例：傍晚 20:00 开场，6 个目标，含必观与窗口冲突。 */
 export const SAMPLE_REQUEST: ScheduleRequest = {
@@ -7,6 +12,7 @@ export const SAMPLE_REQUEST: ScheduleRequest = {
   initial_elevation: 45,
   azimuth_speed: 2,
   elevation_speed: 1,
+  cable_envelope: null,
   targets: [
     { id: "T1", azimuth: 60, elevation: 60, duration: 600, window_start: 72000, window_end: 78000, priority: 10, must_observe: true },
     { id: "T2", azimuth: 120, elevation: 30, duration: 450, window_start: 73500, window_end: 81000, priority: 8, must_observe: false },
@@ -17,7 +23,7 @@ export const SAMPLE_REQUEST: ScheduleRequest = {
   ],
 }
 
-const CONFIG_KEYS: (keyof SchedulerConfig)[] = [
+const CONFIG_KEYS: (keyof Omit<SchedulerConfig, "cable_envelope">)[] = [
   "initial_time",
   "initial_azimuth",
   "initial_elevation",
@@ -54,6 +60,20 @@ function readTarget(raw: unknown, index: number): TargetInput {
   }
 }
 
+function readEnvelope(obj: Record<string, unknown>): CableEnvelope | null {
+  const raw = obj.cable_envelope
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("cable_envelope 必须是对象或 null")
+  }
+  const env = raw as Record<string, unknown>
+  return {
+    reference_azimuth: readNumber(env, "reference_azimuth"),
+    lower_limit: readNumber(env, "lower_limit"),
+    upper_limit: readNumber(env, "upper_limit"),
+  }
+}
+
 /** 解析导入的 JSON（轻量预检，权威校验由后端完成并返回可定位错误）。 */
 export function parseImported(data: unknown): ScheduleRequest {
   if (typeof data !== "object" || data === null) {
@@ -64,6 +84,7 @@ export function parseImported(data: unknown): ScheduleRequest {
   for (const key of CONFIG_KEYS) {
     config[key] = readNumber(obj, key)
   }
+  config.cable_envelope = readEnvelope(obj)
   if (!Array.isArray(obj.targets)) {
     throw new Error("缺少 targets 数组")
   }
