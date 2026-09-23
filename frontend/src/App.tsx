@@ -5,6 +5,7 @@ import { ResultView } from "./components/ResultView"
 import { TargetTable } from "./components/TargetTable"
 import { SAMPLE_REQUEST, parseImported } from "./sample"
 import type {
+  CableEnvelopeInput,
   ScheduleRequest,
   ScheduleResponse,
   SchedulerConfig,
@@ -18,6 +19,7 @@ function configOf(req: ScheduleRequest): SchedulerConfig {
     initial_elevation: req.initial_elevation,
     azimuth_speed: req.azimuth_speed,
     elevation_speed: req.elevation_speed,
+    cable_envelope: req.cable_envelope,
   }
 }
 
@@ -38,6 +40,33 @@ export default function App() {
     () => ({ ...config, targets }),
     [config, targets],
   )
+
+  function onConfigChange(field: keyof SchedulerConfig, value: number) {
+    setConfig((c) => {
+      if (field === "initial_azimuth" && c.cable_envelope !== null) {
+        // 保持展开初始方位与新初始方位同余：取最接近当前展开值的同余位置。
+        const env = c.cable_envelope
+        const k = Math.round((env.initial_azimuth_unwrapped - value) / 360)
+        return {
+          ...c,
+          initial_azimuth: value,
+          cable_envelope: {
+            ...env,
+            initial_azimuth_unwrapped: value + 360 * k,
+          },
+        }
+      }
+      return { ...c, [field]: value }
+    })
+  }
+
+  function onEnvelopeChange(patch: Partial<CableEnvelopeInput> | null) {
+    setConfig((c) => {
+      if (patch === null) return { ...c, cable_envelope: null }
+      if (c.cable_envelope === null) return c
+      return { ...c, cable_envelope: { ...c.cable_envelope, ...patch } }
+    })
+  }
 
   function applyRequest(next: ScheduleRequest) {
     setConfig(configOf(next))
@@ -113,7 +142,8 @@ export default function App() {
         </div>
         <ConfigForm
           values={config}
-          onChange={(field, value) => setConfig((c) => ({ ...c, [field]: value }))}
+          onChange={onConfigChange}
+          onEnvelopeChange={onEnvelopeChange}
         />
       </section>
 

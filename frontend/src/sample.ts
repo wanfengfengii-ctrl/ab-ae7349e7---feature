@@ -1,4 +1,9 @@
-import type { ScheduleRequest, SchedulerConfig, TargetInput } from "./types"
+import type {
+  CableEnvelopeInput,
+  ScheduleRequest,
+  SchedulerConfig,
+  TargetInput,
+} from "./types"
 
 /** 内置示例：傍晚 20:00 开场，6 个目标，含必观与窗口冲突。 */
 export const SAMPLE_REQUEST: ScheduleRequest = {
@@ -7,6 +12,7 @@ export const SAMPLE_REQUEST: ScheduleRequest = {
   initial_elevation: 45,
   azimuth_speed: 2,
   elevation_speed: 1,
+  cable_envelope: null,
   targets: [
     { id: "T1", azimuth: 60, elevation: 60, duration: 600, window_start: 72000, window_end: 78000, priority: 10, must_observe: true },
     { id: "T2", azimuth: 120, elevation: 30, duration: 450, window_start: 73500, window_end: 81000, priority: 8, must_observe: false },
@@ -17,13 +23,12 @@ export const SAMPLE_REQUEST: ScheduleRequest = {
   ],
 }
 
-const CONFIG_KEYS: (keyof SchedulerConfig)[] = [
-  "initial_time",
-  "initial_azimuth",
-  "initial_elevation",
-  "azimuth_speed",
-  "elevation_speed",
+const ENVELOPE_KEYS: (keyof CableEnvelopeInput)[] = [
+  "initial_azimuth_unwrapped",
+  "min_azimuth",
+  "max_azimuth",
 ]
+void ENVELOPE_KEYS
 
 function readNumber(obj: Record<string, unknown>, key: string): number {
   const v = obj[key]
@@ -31,6 +36,19 @@ function readNumber(obj: Record<string, unknown>, key: string): number {
     throw new Error(`字段 ${key} 缺失或不是数字`)
   }
   return v
+}
+
+function readEnvelope(raw: unknown): CableEnvelopeInput | null {
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("cable_envelope 必须是对象或 null")
+  }
+  const obj = raw as Record<string, unknown>
+  return {
+    initial_azimuth_unwrapped: readNumber(obj, "initial_azimuth_unwrapped"),
+    min_azimuth: readNumber(obj, "min_azimuth"),
+    max_azimuth: readNumber(obj, "max_azimuth"),
+  }
 }
 
 function readTarget(raw: unknown, index: number): TargetInput {
@@ -60,10 +78,14 @@ export function parseImported(data: unknown): ScheduleRequest {
     throw new Error("顶层必须是 JSON 对象")
   }
   const obj = data as Record<string, unknown>
-  const config = {} as SchedulerConfig
-  for (const key of CONFIG_KEYS) {
-    config[key] = readNumber(obj, key)
-  }
+  const config = {
+    initial_time: readNumber(obj, "initial_time"),
+    initial_azimuth: readNumber(obj, "initial_azimuth"),
+    initial_elevation: readNumber(obj, "initial_elevation"),
+    azimuth_speed: readNumber(obj, "azimuth_speed"),
+    elevation_speed: readNumber(obj, "elevation_speed"),
+    cable_envelope: readEnvelope(obj.cable_envelope),
+  } satisfies SchedulerConfig
   if (!Array.isArray(obj.targets)) {
     throw new Error("缺少 targets 数组")
   }

@@ -16,6 +16,22 @@
   4. 最小化结束时刻；
   5. 以观测顺序的编号序列字典序决胜（编号按字符串比较）。
 
+### 电缆包络模式（可选）
+
+连续跟踪受电缆缠绕限制：同一物理方位对应相差整圈的多个机械位置。请求中可给出 `cable_envelope`，值班员指定：
+
+- `initial_azimuth_unwrapped`：与初始方位同余（相差 360 的整数倍）的**展开初始方位**，可落在 0–359 之外；
+- `min_azimuth` / `max_azimuth`：整数**软限位区间**，宽度不超过 720°（2 整圈），展开初始方位须在区间内。
+
+目标仍用 0–359° 方位表示。启用后：
+
+- 每次到达必须选择**区间内与目标方位同余的展开位置**，方位距离按展开位置的绝对差计算（不再取圆周最短），转向路径**不得越过软限位**；
+- 后端把**圈位选择与目标顺序联合全局求解**（沿用上面的优先级、数量、结束时刻、编号序列决胜）；
+- 编号序列也相同时，再取**展开方位序列字典序最小**；
+- 必观目标不存在共同可行的顺序与圈位组合时返回 `status: "infeasible"` 并在 `message` 给出明确原因（区间内无同余位置 / 时间窗与软限位共同导致不可行）。
+
+未提供 `cable_envelope`（或为 `null`）时，旧请求与结果保持完全相同的语义与 JSON 形状。
+
 ## 求解算法
 
 目标数 ≤ 16，采用子集动态规划全局求解：
@@ -24,7 +40,9 @@
 2. 按 `(-总优先级, -目标数, 结束时刻)` 选出最优子集（可并列多个）；
 3. 反向 DP 计算"最晚开始时刻表"，逐位贪心重建字典序最小的编号序列，在并列子集间再取最小。
 
-16 目标最坏情况约 1–2 秒。正确性由测试中与暴力枚举（全排列）对拍保证。
+电缆包络模式下每个目标先展开为区间内全部同余圈位，DP 状态 `f[mask][position]` 同时刻画"观测了哪些目标"与"停在哪个圈位"，因此圈位选择是全局解而非逐段最短贪心；重建分两步：先定字典序最小的编号序列（沿所有可行圈位维护最早结束前沿），编号序列固定后再反向贪心取展开方位序列字典序最小。
+
+16 目标最坏情况约 1–3 秒（包络模式 720° 区间每目标至多 3 个圈位）。正确性由测试中与暴力枚举（旧模式全排列；包络模式子集×排列×圈位）对拍保证。
 
 ## 快速开始（Docker）
 
@@ -64,7 +82,7 @@ docker compose run --rm verify
 
 ### `POST /api/schedule`
 
-请求：
+请求（省略 `cable_envelope` 即为旧模式）：
 
 ```json
 {
@@ -73,10 +91,21 @@ docker compose run --rm verify
   "initial_elevation": 45,
   "azimuth_speed": 2,
   "elevation_speed": 1,
+  "cable_envelope": null,
   "targets": [
     {"id": "T1", "azimuth": 60, "elevation": 60, "duration": 600,
      "window_start": 72000, "window_end": 78000, "priority": 10, "must_observe": true}
   ]
+}
+```
+
+电缆包络模式（目标方位仍为 0–359）：
+
+```json
+"cable_envelope": {
+  "initial_azimuth_unwrapped": 0,
+  "min_azimuth": -360,
+  "max_azimuth": 360
 }
 ```
 
@@ -97,6 +126,17 @@ docker compose run --rm verify
   "end_time": 72630
 }
 ```
+
+电缆包络模式的每个观测额外给出展开方位与方向：
+
+```json
+{"target_id": "T4", "arrival_azimuth": 350,
+ "slew": {"azimuth_seconds": 340, "elevation_seconds": 0, "total_seconds": 340,
+          "from_azimuth": 10, "to_azimuth": 350, "azimuth_direction": "cw"}}
+```
+
+- `azimuth_direction`：`cw` = 顺转（展开方位增大），`ccw` = 逆转；转角为 `|to_azimuth - from_azimuth|`。
+- 旧模式响应不含 `from_azimuth` / `to_azimuth` / `azimuth_direction` / `arrival_azimuth` 字段。
 
 - `status: "infeasible"`：必观目标无法全部纳入任何可行序列（仍为 `200`，`message` 说明原因）。
 - 字段非法：返回 `422`，`detail[].loc` 定位到具体字段（如 `["body", "targets", 0, "azimuth"]`），重复编号、窗口倒置等跨字段错误同样带定位信息。

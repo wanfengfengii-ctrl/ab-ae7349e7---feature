@@ -1,11 +1,16 @@
 import { formatHMS } from "../time"
-import type { ScheduleResponse, TargetInput } from "../types"
+import type { Observation, ScheduleResponse, TargetInput } from "../types"
 import { Timeline } from "./Timeline"
 
 interface ResultViewProps {
   result: ScheduleResponse
   targets: TargetInput[]
   initialTime: number
+}
+
+function directionLabel(o: Observation): string {
+  if (o.slew.azimuth_direction === undefined) return ""
+  return o.slew.azimuth_direction === "cw" ? "顺转" : "逆转"
 }
 
 export function ResultView({ result, targets, initialTime }: ResultViewProps) {
@@ -22,10 +27,14 @@ export function ResultView({ result, targets, initialTime }: ResultViewProps) {
   const windows = Object.fromEntries(
     targets.map((t) => [t.id, { start: t.window_start, end: t.window_end }]),
   )
+  // 电缆包络模式：观测带展开方位字段。
+  const envelopeMode =
+    result.observations.length > 0 &&
+    result.observations[0].arrival_azimuth !== undefined
 
   return (
     <section className="card result-card">
-      <h2>排程结果</h2>
+      <h2>排程结果{envelopeMode ? "（电缆包络）" : ""}</h2>
 
       <div className="stats">
         <div>
@@ -74,6 +83,9 @@ export function ResultView({ result, targets, initialTime }: ResultViewProps) {
               <tr>
                 <th>#</th>
                 <th>编号</th>
+                {envelopeMode && <th>起始展开方位</th>}
+                {envelopeMode && <th>到达展开方位</th>}
+                {envelopeMode && <th>方向/转角</th>}
                 <th>转向（方位/俯仰/合计）</th>
                 <th>到达</th>
                 <th>等待</th>
@@ -86,6 +98,21 @@ export function ResultView({ result, targets, initialTime }: ResultViewProps) {
                 <tr key={o.target_id}>
                   <td>{i + 1}</td>
                   <td>{o.target_id}</td>
+                  {envelopeMode && (
+                    <>
+                      <td>{o.slew.from_azimuth}°</td>
+                      <td>{o.arrival_azimuth}°</td>
+                      <td>
+                        {directionLabel(o)}
+                        {o.slew.to_azimuth !== undefined &&
+                          o.slew.from_azimuth !== undefined && (
+                            <span className="hms">
+                              {Math.abs(o.slew.to_azimuth - o.slew.from_azimuth)}°
+                            </span>
+                          )}
+                      </td>
+                    </>
+                  )}
                   <td>
                     {o.slew.azimuth_seconds}s / {o.slew.elevation_seconds}s /{" "}
                     <strong>{o.slew.total_seconds}s</strong>

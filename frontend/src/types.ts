@@ -1,9 +1,17 @@
+export interface CableEnvelopeInput {
+  initial_azimuth_unwrapped: number
+  min_azimuth: number
+  max_azimuth: number
+}
+
 export interface SchedulerConfig {
   initial_time: number
   initial_azimuth: number
   initial_elevation: number
   azimuth_speed: number
   elevation_speed: number
+  // null（或旧请求中省略）表示沿用圆周最短转向旧语义。
+  cable_envelope: CableEnvelopeInput | null
 }
 
 export interface TargetInput {
@@ -25,6 +33,10 @@ export interface SlewInfo {
   azimuth_seconds: number
   elevation_seconds: number
   total_seconds: number
+  // 仅电缆包络模式出现：
+  from_azimuth?: number
+  to_azimuth?: number
+  azimuth_direction?: "cw" | "ccw"
 }
 
 export interface Observation {
@@ -34,6 +46,8 @@ export interface Observation {
   wait_seconds: number
   start: number
   end: number
+  // 仅电缆包络模式出现：到达时的展开方位。
+  arrival_azimuth?: number
 }
 
 export interface ScheduleResponse {

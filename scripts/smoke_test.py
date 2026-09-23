@@ -139,6 +139,54 @@ def main() -> int:
     check("HTTP 200", status == 200, status)
     check("status == infeasible", bool(body) and body.get("status") == "infeasible", body)
 
+    print("[smoke] 电缆包络：圈位与顺序联合求解")
+    envelope = {
+        "initial_time": 0,
+        "initial_azimuth": 0,
+        "initial_elevation": 0,
+        "azimuth_speed": 1,
+        "elevation_speed": 1,
+        "cable_envelope": {
+            "initial_azimuth_unwrapped": 0,
+            "min_azimuth": 0,
+            "max_azimuth": 360,
+        },
+        "targets": [
+            {"id": "M1", "azimuth": 350, "elevation": 0, "duration": 10,
+             "window_start": 0, "window_end": 1000, "priority": 5, "must_observe": True},
+            {"id": "M2", "azimuth": 10, "elevation": 0, "duration": 10,
+             "window_start": 0, "window_end": 1000, "priority": 5, "must_observe": True},
+        ],
+    }
+    status, _, body = request("POST", f"{base}/api/schedule", envelope)
+    check("HTTP 200", status == 200, status)
+    check("包络排程 status == ok", bool(body) and body.get("status") == "ok", body)
+    if body and body.get("status") == "ok":
+        ids = [o["target_id"] for o in body["observations"]]
+        check("序列 == [M2, M1]", ids == ["M2", "M1"], ids)
+        m2, m1 = body["observations"]
+        check("M2 顺转 0→10",
+              m2["slew"].get("from_azimuth") == 0
+              and m2["slew"].get("to_azimuth") == 10
+              and m2["slew"].get("azimuth_direction") == "cw",
+              m2["slew"])
+        # 350° 不能走最短的 -10（越过软限位下界 0），须顺转 340。
+        check("M1 不越界顺转 10→350（最短转向会越软限位）",
+              m1["slew"].get("from_azimuth") == 10
+              and m1["slew"].get("to_azimuth") == 350
+              and m1["slew"].get("azimuth_direction") == "cw"
+              and m1["slew"]["azimuth_seconds"] == 340,
+              m1["slew"])
+
+    print("[smoke] 电缆包络参数校验可定位")
+    bad_env = copy.deepcopy(envelope)
+    bad_env["cable_envelope"]["initial_azimuth_unwrapped"] = 10  # 与初始 0 不同余
+    status, _, body = request("POST", f"{base}/api/schedule", bad_env)
+    check("HTTP 422", status == 422, status)
+    locs = [item.get("loc", []) for item in (body or {}).get("detail", [])]
+    check("错误定位包含 cable_envelope",
+          any("cable_envelope" in [str(x) for x in loc] for loc in locs), locs)
+
     if FAILURES:
         print(f"[smoke] 失败 {len(FAILURES)} 项: {FAILURES}")
         return 1

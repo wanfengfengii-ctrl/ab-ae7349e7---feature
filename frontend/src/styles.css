@@ -133,6 +133,33 @@ button.danger {
   font-size: 12px;
 }
 
+.envelope {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--card-border);
+}
+
+.envelope-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.envelope-toggle input[type="checkbox"] {
+  width: auto;
+}
+
+.envelope .config-grid {
+  margin-top: 10px;
+}
+
+.envelope-hint {
+  margin-top: 8px;
+}
+
 input[type="number"],
 input:not([type]) {
   background: #0d1430;
