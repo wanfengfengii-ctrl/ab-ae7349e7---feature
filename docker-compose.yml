@@ -1,0 +1,32 @@
+name: radio-scheduler
+
+services:
+  # 合并部署的全栈应用：同一容器内后端 API + 前端静态页面。
+  app:
+    build:
+      context: .
+      target: runtime
+    image: radio-scheduler-app
+    ports:
+      # 宿主机端口可通过 APP_PORT 环境变量配置（默认 8000）。
+      - "${APP_PORT:-8000}:8000"
+    healthcheck:
+      # 健康检查参数均可通过环境变量覆盖。
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=5).status==200 else 1)"
+      interval: ${HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${HEALTHCHECK_TIMEOUT:-5s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+      start_period: ${HEALTHCHECK_START_PERIOD:-10s}
+    restart: unless-stopped
+
+  # 一次性校验服务：代码测试 -> 前端构建检查 -> API 冒烟，按退出码结束。
+  # 用法：docker compose run --rm verify
+  verify:
+    build:
+      context: .
+      target: verify
+    image: radio-scheduler-verify
